@@ -1,0 +1,55 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - {runner: ubuntu-latest, goos: linux, goarch: amd64, cc: gcc, ext: so}
+          - {runner: ubuntu-latest, goos: linux, goarch: arm64, cc: aarch64-linux-gnu-gcc, ext: so}
+          - {runner: macos-15-intel, goos: darwin, goarch: amd64, cc: clang, ext: dylib}
+          - {runner: macos-15, goos: darwin, goarch: arm64, cc: clang, ext: dylib}
+          - {runner: ubuntu-latest, goos: windows, goarch: amd64, cc: x86_64-w64-mingw32-gcc, ext: dll}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+      - if: matrix.goos == 'linux' && matrix.goarch == 'arm64'
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+      - if: matrix.goos == 'windows'
+        run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-x86-64
+      - name: Build and package
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CC: ${{ matrix.cc }}
+          CGO_ENABLED: 1
+          EXT: ${{ matrix.ext }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          go build -buildmode=c-shared -o "keyring.$EXT" .
+          zip "keyring_${TAG#v}_${GOOS}_${GOARCH}.zip" "keyring.$EXT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.goos }}-${{ matrix.goarch }}
+          path: '*.zip'
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - run: cd dist && sha256sum *.zip > checksums.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.zip
+            dist/checksums.txt

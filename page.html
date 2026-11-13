@@ -1,0 +1,24 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Keyring</title><style>body{font:15px system-ui;max-width:1000px;margin:2em auto;padding:0 1em}label{display:block;margin:.5em 0}input,textarea{box-sizing:border-box;width:100%;padding:.4em}input[type=checkbox]{width:auto}fieldset{margin:1em 0}textarea{height:4em}button{padding:.5em 1em}pre{white-space:pre-wrap;color:#a22}</style><h1>Keyring / 金鑰管理</h1><p id="auth-message">Connecting to CPAMC session…</p><label id="secret-label" hidden>Management key <input id="secret" type="password" autocomplete="off"></label><button id="load">Load / 載入</button> <button id="save">Save / 儲存</button><pre id="message"></pre><main id="rows"></main><script>
+let cfg, entries=[], auths=[], managementKey='';
+function storedManagementKey(){
+ try {
+  if(localStorage.getItem('isLoggedIn')!=='true')return '';
+  const raw=localStorage.getItem('cli-proxy-auth');if(!raw||!raw.startsWith('enc::v2::'))return '';
+  const encrypted=Uint8Array.from(atob(raw.slice(9)),c=>c.charCodeAt(0));
+  const mask=new TextEncoder().encode('cli-proxy-api-webui::secure-storage|'+location.host);
+  const decoded=encrypted.map((b,i)=>b^mask[i%mask.length]);
+  const key=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(decoded))?.state?.managementKey;
+  return typeof key==='string'?key.trim():'';
+ }catch{return ''}
+}
+function requestManualKey(){managementKey='';$('#secret-label').hidden=false;$('#auth-message').textContent='Enter the CPA management key to load settings.'}
+
+const $=s=>document.querySelector(s), msg=s=>$('#message').textContent=s;
+async function api(path,options={}) {let r=await fetch('/v8/management/'+path,{...options,headers:{'Authorization':'Bearer '+managementKey,'Content-Type':'application/json',...(options.headers||{})}});if(!r.ok){let e=Error(path+': HTTP '+r.status+' '+await r.text());e.status=r.status;throw e}return r.json()}
+async function scope(key){let data=new TextEncoder().encode('cli-proxy-api:caller-scope:v1\0'+key),hash=await crypto.subtle.digest('SHA-256',data);return [...new Uint8Array(hash)].map(x=>x.toString(16).padStart(2,'0')).join('')}
+function elt(tag,text){let x=document.createElement(tag);if(text!==undefined)x.textContent=text;return x}
+function input(parent,label,value,multi=false){let l=elt('label',label),v=elt(multi?'textarea':'input');v.value=value||'';l.append(v);parent.append(l);return v}
+$('#load').onclick=async()=>{try{if(!managementKey){managementKey=$('#secret').value.trim();$('#secret').value='';if(!managementKey){requestManualKey();return}}msg('Loading...');let [keys,plugin,credentials]=await Promise.all([api('config/access/api-keys'),api('config/plugins/configs/keyring'),api('credentials')]);cfg=plugin;auths=credentials.files||[];entries=[];$('#rows').replaceChildren();for(let key of keys){let s=await scope(key),r=(cfg.keys||[]).find(x=>x.scope===s)||{scope:s};let box=elt('fieldset'),title=elt('legend',key.length>8?key.slice(0,4)+'…'+key.slice(-4):'••••');box.append(title);let name=input(box,'Name / 名稱',r.name),note=input(box,'Note / 備註',r.note),allow=input(box,'Allow models (one pattern per line)',(r.allow_models||[]).join('\n'),true),deny=input(box,'Deny models (one pattern per line)',(r.deny_models||[]).join('\n'),true),bound=input(box,'Allowed auth IDs / patterns (one per line)',(r.auths||[]).join('\n'),true);box.append(elt('div','Available credentials / 可用帳號'));for(let a of auths){let label=elt('label'),check=elt('input');check.type='checkbox';check.checked=(r.auths||[]).includes(a.id);check.onchange=()=>{let v=bound.value.split('\n').map(x=>x.trim()).filter(Boolean).filter(x=>x!==a.id);if(check.checked)v.push(a.id);bound.value=v.join('\n')};label.append(check,document.createTextNode(' '+(a.name||a.id)+' ('+a.id+')'));box.append(label)}$('#rows').append(box);entries.push({s,name,note,allow,deny,bound})}$('#secret-label').hidden=true;$('#auth-message').textContent='Connected to CPA management.';msg('Loaded '+entries.length+' keys.');}catch(e){if(e.status===401||e.status===403)requestManualKey();msg(String(e))}};
+$('#save').onclick=async()=>{try{let lines=x=>x.value.split('\n').map(s=>s.trim()).filter(Boolean);let active=new Set(entries.map(e=>e.s));cfg.keys=[...(cfg.keys||[]).filter(r=>!active.has(r.scope)),...entries.map(e=>({scope:e.s,name:e.name.value,note:e.note.value,auths:lines(e.bound),allow_models:lines(e.allow),deny_models:lines(e.deny)}))];await api('config/plugins/configs/keyring',{method:'PUT',body:JSON.stringify(cfg)});msg('Saved. CPA will reload the configuration.')}catch(e){if(e.status===401||e.status===403)requestManualKey();msg(String(e))}};
+managementKey=storedManagementKey();if(managementKey)$('#load').click();else requestManualKey();
+</script></html>
