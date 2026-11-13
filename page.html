@@ -1,24 +1,1812 @@
-<!doctype html><html lang="en"><meta charset="utf-8"><title>Keyring</title><style>body{font:15px system-ui;max-width:1000px;margin:2em auto;padding:0 1em}label{display:block;margin:.5em 0}input,textarea{box-sizing:border-box;width:100%;padding:.4em}input[type=checkbox]{width:auto}fieldset{margin:1em 0}textarea{height:4em}button{padding:.5em 1em}pre{white-space:pre-wrap;color:#a22}</style><h1>Keyring / 金鑰管理</h1><p id="auth-message">Connecting to CPAMC session…</p><label id="secret-label" hidden>Management key <input id="secret" type="password" autocomplete="off"></label><button id="load">Load / 載入</button> <button id="save">Save / 儲存</button><pre id="message"></pre><main id="rows"></main><script>
-let cfg, entries=[], auths=[], managementKey='';
-function storedManagementKey(){
- try {
-  if(localStorage.getItem('isLoggedIn')!=='true')return '';
-  const raw=localStorage.getItem('cli-proxy-auth');if(!raw||!raw.startsWith('enc::v2::'))return '';
-  const encrypted=Uint8Array.from(atob(raw.slice(9)),c=>c.charCodeAt(0));
-  const mask=new TextEncoder().encode('cli-proxy-api-webui::secure-storage|'+location.host);
-  const decoded=encrypted.map((b,i)=>b^mask[i%mask.length]);
-  const key=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(decoded))?.state?.managementKey;
-  return typeof key==='string'?key.trim():'';
- }catch{return ''}
-}
-function requestManualKey(){managementKey='';$('#secret-label').hidden=false;$('#auth-message').textContent='Enter the CPA management key to load settings.'}
-
-const $=s=>document.querySelector(s), msg=s=>$('#message').textContent=s;
-async function api(path,options={}) {let r=await fetch('/v8/management/'+path,{...options,headers:{'Authorization':'Bearer '+managementKey,'Content-Type':'application/json',...(options.headers||{})}});if(!r.ok){let e=Error(path+': HTTP '+r.status+' '+await r.text());e.status=r.status;throw e}return r.json()}
-async function scope(key){let data=new TextEncoder().encode('cli-proxy-api:caller-scope:v1\0'+key),hash=await crypto.subtle.digest('SHA-256',data);return [...new Uint8Array(hash)].map(x=>x.toString(16).padStart(2,'0')).join('')}
-function elt(tag,text){let x=document.createElement(tag);if(text!==undefined)x.textContent=text;return x}
-function input(parent,label,value,multi=false){let l=elt('label',label),v=elt(multi?'textarea':'input');v.value=value||'';l.append(v);parent.append(l);return v}
-$('#load').onclick=async()=>{try{if(!managementKey){managementKey=$('#secret').value.trim();$('#secret').value='';if(!managementKey){requestManualKey();return}}msg('Loading...');let [keys,plugin,credentials]=await Promise.all([api('config/access/api-keys'),api('config/plugins/configs/keyring'),api('credentials')]);cfg=plugin;auths=credentials.files||[];entries=[];$('#rows').replaceChildren();for(let key of keys){let s=await scope(key),r=(cfg.keys||[]).find(x=>x.scope===s)||{scope:s};let box=elt('fieldset'),title=elt('legend',key.length>8?key.slice(0,4)+'…'+key.slice(-4):'••••');box.append(title);let name=input(box,'Name / 名稱',r.name),note=input(box,'Note / 備註',r.note),allow=input(box,'Allow models (one pattern per line)',(r.allow_models||[]).join('\n'),true),deny=input(box,'Deny models (one pattern per line)',(r.deny_models||[]).join('\n'),true),bound=input(box,'Allowed auth IDs / patterns (one per line)',(r.auths||[]).join('\n'),true);box.append(elt('div','Available credentials / 可用帳號'));for(let a of auths){let label=elt('label'),check=elt('input');check.type='checkbox';check.checked=(r.auths||[]).includes(a.id);check.onchange=()=>{let v=bound.value.split('\n').map(x=>x.trim()).filter(Boolean).filter(x=>x!==a.id);if(check.checked)v.push(a.id);bound.value=v.join('\n')};label.append(check,document.createTextNode(' '+(a.name||a.id)+' ('+a.id+')'));box.append(label)}$('#rows').append(box);entries.push({s,name,note,allow,deny,bound})}$('#secret-label').hidden=true;$('#auth-message').textContent='Connected to CPA management.';msg('Loaded '+entries.length+' keys.');}catch(e){if(e.status===401||e.status===403)requestManualKey();msg(String(e))}};
-$('#save').onclick=async()=>{try{let lines=x=>x.value.split('\n').map(s=>s.trim()).filter(Boolean);let active=new Set(entries.map(e=>e.s));cfg.keys=[...(cfg.keys||[]).filter(r=>!active.has(r.scope)),...entries.map(e=>({scope:e.s,name:e.name.value,note:e.note.value,auths:lines(e.bound),allow_models:lines(e.allow),deny_models:lines(e.deny)}))];await api('config/plugins/configs/keyring',{method:'PUT',body:JSON.stringify(cfg)});msg('Saved. CPA will reload the configuration.')}catch(e){if(e.status===401||e.status===403)requestManualKey();msg(String(e))}};
-managementKey=storedManagementKey();if(managementKey)$('#load').click();else requestManualKey();
-</script></html>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#faf9f5" />
+    <title>Keyring</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg-secondary: #faf9f5;
+        --bg-primary: #f0eee8;
+        --bg-tertiary: #e9e6df;
+        --bg-hover: #e9e6df;
+        --text-primary: #2d2a26;
+        --text-secondary: #6d6760;
+        --text-tertiary: #a29c95;
+        --border-color: #e3e1db;
+        --border-primary: #d5d2cb;
+        --border-hover: #cecac4;
+        --primary-color: #8b8680;
+        --primary-hover: #7f7a74;
+        --primary-active: #726d67;
+        --primary-contrast: #fff;
+        --success-color: #10b981;
+        --error-color: #c65746;
+        --warning-bg: rgba(198, 87, 70, 0.12);
+        --warning-border: rgba(198, 87, 70, 0.35);
+        --shadow: 0 1px 2px 0 rgb(0 0 0 / 0.08);
+        --count-badge-bg: rgba(139, 134, 128, 0.18);
+        --count-badge-text: #726d67;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-parent-theme]) {
+          color-scheme: dark;
+          --bg-secondary: #151412;
+          --bg-primary: #1d1b18;
+          --bg-tertiary: #262320;
+          --bg-hover: #2e2a26;
+          --text-primary: #f6f4f1;
+          --text-secondary: #c9c3bb;
+          --text-tertiary: #9c958d;
+          --border-color: #3a3530;
+          --border-primary: #4a453f;
+          --border-hover: #5a544d;
+          --primary-color: #8b8680;
+          --primary-hover: #9a948e;
+          --primary-active: #a6a099;
+          --primary-contrast: #fff;
+          --warning-bg: rgba(198, 87, 70, 0.22);
+          --warning-border: rgba(198, 87, 70, 0.45);
+          --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.3);
+          --count-badge-bg: rgba(139, 134, 128, 0.28);
+          --count-badge-text: #a6a099;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        min-height: 100%;
+        margin: 0;
+      }
+      body {
+        background: var(--bg-secondary);
+        color: var(--text-primary);
+        font:
+          14px/1.5 -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          Roboto,
+          Oxygen,
+          Ubuntu,
+          Cantarell,
+          "Fira Sans",
+          "Droid Sans",
+          "Helvetica Neue",
+          sans-serif;
+      }
+      button,
+      input,
+      textarea,
+      select {
+        font: inherit;
+      }
+      button,
+      input,
+      textarea,
+      select,
+      a {
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
+      }
+      :focus-visible {
+        outline: 2px solid var(--primary-color);
+        outline-offset: 2px;
+      }
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: var(--border-color);
+        border-radius: 9999px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: var(--border-hover);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          transition-duration: 0s !important;
+          animation-duration: 0s !important;
+        }
+      }
+      @media (pointer: fine) {
+        html {
+          overscroll-behavior: none;
+        }
+      }
+      button {
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      .shell {
+        max-width: 1220px;
+        margin: 0 auto;
+        padding: 32px max(24px, env(safe-area-inset-right)) 48px
+          max(24px, env(safe-area-inset-left));
+      }
+      html[data-parent-theme] .shell {
+        padding-top: 88px;
+      }
+      .topbar {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 24px;
+        flex-wrap: wrap;
+      }
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        color: inherit;
+        text-decoration: none;
+        border-radius: 8px;
+      }
+      .brand img {
+        width: 32px;
+        height: 32px;
+        flex: none;
+      }
+      .brand:hover {
+        text-decoration: underline;
+        text-underline-offset: 4px;
+      }
+      .heading h1 {
+        font-size: 26px;
+        line-height: 1.2;
+        letter-spacing: -0.025em;
+        margin: 8px 0;
+        text-wrap: balance;
+      }
+      .heading p {
+        color: var(--text-secondary);
+        margin: 0;
+        max-width: 660px;
+      }
+      .actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        padding: 10px 14px;
+        font-weight: 600;
+        line-height: 1.3;
+      }
+      .btn svg {
+        width: 16px;
+        height: 16px;
+        flex: none;
+      }
+      .btn-primary {
+        --btn-bg: color-mix(in srgb, var(--primary-color) 78%, #000);
+        background: var(--btn-bg);
+        border-color: var(--btn-bg);
+        color: var(--primary-contrast);
+      }
+      .btn-primary:hover:not(:disabled) {
+        --btn-bg: color-mix(in srgb, var(--primary-hover) 68%, #000);
+      }
+      .btn-secondary {
+        background: var(--bg-tertiary);
+        border-color: var(--border-color);
+        color: var(--text-primary);
+      }
+      .btn-secondary:hover {
+        background: var(--bg-hover);
+        border-color: var(--border-hover);
+      }
+      .btn-small {
+        padding: 8px 10px;
+        font-size: 13px;
+      }
+      .status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 22px;
+        margin-top: 16px;
+        color: var(--text-secondary);
+        font-size: 13px;
+      }
+      .status-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--text-tertiary);
+        flex: none;
+      }
+      .status[data-kind="success"] .status-dot {
+        background: var(--success-color);
+      }
+      .status[data-kind="error"] {
+        color: var(--text-primary);
+      }
+      .status[data-kind="error"] .status-dot {
+        background: var(--error-color);
+      }
+      .status a {
+        color: var(--primary-color);
+      }
+      #check-update {
+        position: relative;
+      }
+      .btn-version {
+        color: var(--text-tertiary);
+        font-weight: 500;
+      }
+      .update-dot {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--error-color);
+      }
+      .card {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        box-shadow: var(--shadow);
+        padding: 24px;
+      }
+      .auth-card {
+        margin-top: 24px;
+        max-width: 480px;
+      }
+      .auth-card h2 {
+        font-size: 18px;
+        margin: 0 0 4px;
+      }
+      .auth-card p {
+        color: var(--text-secondary);
+        margin: 0 0 16px;
+      }
+      .auth-row {
+        display: flex;
+        gap: 8px;
+      }
+      .auth-row input {
+        flex: 1;
+        min-width: 0;
+      }
+      .overview {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin: 24px 0 16px;
+      }
+      .overview-title {
+        font-size: 15px;
+        font-weight: 700;
+        margin: 0;
+      }
+      .count {
+        background: var(--count-badge-bg);
+        color: var(--count-badge-text);
+        border-radius: 9999px;
+        padding: 3px 9px;
+        font-size: 12px;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+      }
+      .key-list {
+        display: grid;
+        gap: 16px;
+      }
+      .key-card {
+        padding: 0;
+      }
+      .key-header {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        width: 100%;
+        padding: 16px 24px;
+        border: 0;
+        background: transparent;
+        color: var(--text-primary);
+        text-align: left;
+        border-radius: 11px;
+      }
+      .key-header:hover {
+        background: var(--bg-hover);
+      }
+      .key-header[aria-expanded="true"] {
+        border-bottom: 1px solid var(--border-color);
+        border-bottom-left-radius: 0;
+        border-bottom-right-radius: 0;
+      }
+      .key-header:focus-visible {
+        outline-offset: -4px;
+      }
+      .key-heading {
+        margin: 0;
+        font-size: inherit;
+      }
+      .key-info {
+        display: flex;
+        align-items: baseline;
+        gap: 12px;
+        min-width: 0;
+        flex-wrap: wrap;
+      }
+      .key-summary {
+        color: var(--text-secondary);
+        font-variant-numeric: tabular-nums;
+        font-size: 13px;
+        font-weight: 400;
+        overflow-wrap: anywhere;
+      }
+      .key-dirty {
+        color: var(--text-primary);
+        background: var(--count-badge-bg);
+        border-radius: 9999px;
+        padding: 3px 8px;
+        font-size: 12px;
+        white-space: nowrap;
+      }
+      .key-chevron {
+        width: 18px;
+        height: 18px;
+        flex: none;
+        margin-left: auto;
+        color: var(--text-secondary);
+      }
+      .key-chevron svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      .key-header[aria-expanded="true"] .key-chevron {
+        transform: rotate(180deg);
+      }
+      .key-identity {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 0;
+        flex: 1 1 auto;
+      }
+      .key-icon {
+        width: 40px;
+        height: 40px;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        background: var(--bg-secondary);
+        display: grid;
+        place-items: center;
+        color: var(--text-secondary);
+        flex: none;
+      }
+      .key-icon svg {
+        width: 19px;
+        height: 19px;
+      }
+      .key-title {
+        font-size: 16px;
+        font-weight: 700;
+        line-height: 1.25;
+        margin: 0;
+        overflow-wrap: anywhere;
+      }
+      .key-mask {
+        font:
+          12px/1.5 ui-monospace,
+          "SF Mono",
+          "Cascadia Mono",
+          "JetBrains Mono",
+          "Fira Code",
+          Menlo,
+          Consolas,
+          monospace;
+        color: var(--text-secondary);
+      }
+      .key-body {
+        padding: 24px;
+        display: grid;
+        gap: 24px;
+      }
+      .identity-grid,
+      .policy-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+      }
+      .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 0;
+      }
+      .label {
+        font-weight: 600;
+        color: var(--text-primary);
+      }
+      .hint {
+        color: var(--text-secondary);
+        font-size: 13px;
+      }
+      .input,
+      textarea,
+      select {
+        width: 100%;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 10px 12px;
+        background: var(--bg-secondary);
+        color: var(--text-primary);
+      }
+      .input:focus-visible,
+      textarea:focus-visible,
+      select:focus-visible {
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 3px rgba(139, 134, 128, 0.18);
+      }
+      textarea {
+        min-height: 72px;
+        resize: vertical;
+      }
+      input::placeholder,
+      textarea::placeholder {
+        color: var(--text-secondary);
+        opacity: 1;
+      }
+      .section-title {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 8px;
+      }
+      .section-title strong {
+        font-size: 14px;
+      }
+      .binding-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 16px;
+      }
+      .credential-list {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        max-height: 175px;
+        overflow: auto;
+      }
+      .credential {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--border-color);
+        cursor: pointer;
+      }
+      .credential:last-child {
+        border-bottom: 0;
+      }
+      .credential:hover {
+        background: var(--bg-hover);
+      }
+      .credential input {
+        width: 16px;
+        height: 16px;
+        margin: 3px 0 0;
+        accent-color: var(--primary-color);
+        flex: none;
+      }
+      .credential-info {
+        min-width: 0;
+        display: grid;
+      }
+      .credential-name {
+        font-weight: 600;
+        overflow-wrap: anywhere;
+      }
+      .credential-meta {
+        color: var(--text-secondary);
+        font-size: 12px;
+        overflow-wrap: anywhere;
+      }
+      .empty-small {
+        padding: 14px;
+        color: var(--text-secondary);
+        font-size: 13px;
+      }
+      .policy-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .policy-header {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+      .policy-tag {
+        font-size: 11px;
+        font-weight: 700;
+        border-radius: 9999px;
+        padding: 3px 8px;
+        border: 1px solid var(--border-color);
+        color: var(--text-secondary);
+        background: var(--bg-tertiary);
+      }
+      [data-parent-theme="dark"] .policy-tag {
+        color: var(--text-tertiary);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-parent-theme]) .policy-tag {
+          color: var(--text-tertiary);
+        }
+      }
+      .chips {
+        display: flex;
+        align-items: center;
+        align-content: flex-start;
+        flex-wrap: wrap;
+        gap: 6px;
+        min-height: 48px;
+        padding: 7px;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        background: var(--bg-secondary);
+        position: relative;
+      }
+      .chips:focus-within {
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 3px rgba(139, 134, 128, 0.18);
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        max-width: 100%;
+        border: 1px solid var(--border-color);
+        background: var(--bg-tertiary);
+        border-radius: 9999px;
+        padding: 3px 6px 3px 10px;
+        color: var(--text-primary);
+        font-size: 12px;
+      }
+      .chip span {
+        overflow-wrap: anywhere;
+      }
+      .chip button {
+        border: 0;
+        background: transparent;
+        color: var(--text-secondary);
+        padding: 6px;
+        font-size: 16px;
+        line-height: 1;
+      }
+      .chip button:hover {
+        color: var(--error-color);
+      }
+      .chip-input {
+        flex: 1 1 130px;
+        min-width: 80px;
+        border: 0;
+        background: transparent;
+        color: var(--text-primary);
+        padding: 4px;
+      }
+      .chip-input:focus-visible {
+        outline: none;
+      }
+      .suggest {
+        position: absolute;
+        top: calc(100% + 4px);
+        left: 0;
+        right: 0;
+        z-index: 1000;
+        max-height: 240px;
+        overflow: auto;
+        margin: 0;
+        padding: 4px;
+        list-style: none;
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        box-shadow: var(--shadow);
+      }
+      .suggest li {
+        padding: 7px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+        overflow-wrap: anywhere;
+      }
+      .suggest li:hover,
+      .suggest li[aria-selected="true"] {
+        background: var(--bg-hover);
+      }
+      .empty-state {
+        border: 1px dashed var(--border-color);
+        border-radius: 12px;
+        padding: 24px;
+        background: var(--bg-primary);
+        color: var(--text-secondary);
+      }
+      .empty-state strong {
+        display: block;
+        color: var(--text-primary);
+        margin-bottom: 4px;
+      }
+      .warning {
+        margin-top: 16px;
+        border: 1px solid var(--warning-border);
+        border-radius: 8px;
+        background: var(--warning-bg);
+        padding: 10px 12px;
+        color: var(--text-primary);
+        font-size: 13px;
+        overflow-wrap: anywhere;
+      }
+      .skip-link {
+        position: absolute;
+        top: 8px;
+        left: 8px;
+        z-index: 10;
+        padding: 10px;
+        background: var(--bg-primary);
+        color: var(--text-primary);
+        transform: translateY(-150%);
+      }
+      .skip-link:focus-visible {
+        transform: translateY(0);
+      }
+      @media (max-width: 700px) {
+        .shell {
+          padding: 24px max(16px, env(safe-area-inset-right)) 40px
+            max(16px, env(safe-area-inset-left));
+        }
+        .topbar {
+          gap: 16px;
+        }
+        .actions {
+          width: 100%;
+          flex-wrap: wrap;
+        }
+        .actions .btn {
+          flex: 1;
+        }
+        .identity-grid,
+        .policy-grid,
+        .binding-grid {
+          grid-template-columns: 1fr;
+        }
+        .key-header {
+          padding: 16px;
+        }
+        .key-body {
+          padding: 16px;
+          gap: 20px;
+        }
+        .card {
+          padding: 16px;
+        }
+        .key-card {
+          padding: 0;
+        }
+        .heading h1 {
+          font-size: 23px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip-link" href="#content" data-i18n="skip"
+      >Skip to client keys</a
+    >
+    <div class="shell">
+      <header class="topbar">
+        <div class="heading">
+          <h1 translate="no">
+            <a
+              class="brand"
+              href="https://github.com/iiimabbie/cpa-keyring"
+              target="_blank"
+              rel="noopener noreferrer"
+              ><img src="data:image/png;base64,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" alt="" width="32" height="32" />Keyring</a
+            >
+          </h1>
+          <p data-i18n="subtitle">
+            Manage client keys, account bindings, and model access in one place.
+          </p>
+        </div>
+        <div class="actions">
+          <button id="check-update" class="btn btn-secondary" type="button">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              aria-hidden="true"
+            >
+              <path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14" /></svg
+            ><span data-i18n="checkUpdate">Check for updates</span
+            ><span class="btn-version" translate="no">v__KEYRING_VERSION__</span
+            ><span class="update-dot" hidden></span></button
+          ><button id="load" class="btn btn-secondary" type="button">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              aria-hidden="true"
+            >
+              <path d="M20 7v5h-5M4 17v-5h5" />
+              <path
+                d="M5.6 9a7 7 0 0 1 11.7-2L20 12M4 12l2.7 5A7 7 0 0 0 18.4 15"
+              /></svg
+            ><span data-i18n="reload">Reload</span></button
+          ><button id="save" class="btn btn-primary" type="button" disabled>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              aria-hidden="true"
+            >
+              <path d="M5 3h12l3 3v15H4V3h1Zm2 0v6h9V3M8 21v-7h8v7" /></svg
+            ><span data-i18n="save">Save</span>
+          </button>
+        </div>
+      </header>
+      <div id="status" class="status" role="status" aria-live="polite" hidden>
+        <span class="status-dot"></span><span id="status-text"></span
+        ><a
+          id="status-link"
+          href="https://github.com/iiimabbie/cpa-keyring/releases/latest"
+          target="_blank"
+          rel="noopener noreferrer"
+          data-i18n="viewRelease"
+          hidden
+          >View release</a
+        >
+      </div>
+      <section id="auth" class="card auth-card" hidden>
+        <h2 data-i18n="connect">Connect to Management</h2>
+        <p data-i18n="connectHelp">
+          Enter your management key to load client settings.
+        </p>
+        <div class="auth-row">
+          <input
+            id="secret"
+            class="input"
+            type="password"
+            name="management-key"
+            autocomplete="off"
+            data-placeholder="managementKey"
+            aria-label="Management key"
+          /><button
+            id="connect"
+            class="btn btn-primary"
+            type="button"
+            data-i18n="connectButton"
+          >
+            Connect
+          </button>
+        </div>
+      </section>
+      <div id="warning" class="warning" role="alert" hidden></div>
+      <main id="content" tabindex="-1" hidden>
+        <div class="overview">
+          <h2 class="overview-title" data-i18n="clientKeys">Client Keys</h2>
+          <span id="key-count" class="count">0</span>
+        </div>
+        <div id="rows" class="key-list"></div>
+        <div id="empty" class="empty-state" hidden>
+          <strong data-i18n="emptyTitle">No client keys found</strong
+          ><span data-i18n="emptyHelp"
+            >Add a client API key in CPA settings, then reload this page.</span
+          >
+        </div>
+      </main>
+    </div>
+    <script>
+      "use strict";
+      const $ = (s) => document.querySelector(s);
+      const translations = {
+        en: {
+          skip: "Skip to client keys",
+          subtitle:
+            "Manage client keys, account bindings, and model access in one place.",
+          reload: "Reload",
+          save: "Save",
+          connect: "Connect to Management",
+          connectHelp: "Enter your management key to load client settings.",
+          managementKey: "Management key",
+          connectButton: "Connect",
+          clientKeys: "Client Keys",
+          emptyTitle: "No client keys found",
+          emptyHelp:
+            "Add a client API key in CPA settings, then reload this page.",
+          loading: "Loading settings…",
+          saving: "Saving…",
+          loaded: "Settings loaded.",
+          saved: "Saved",
+          connecting: "Enter a management key to continue.",
+          error:
+            "Settings could not be loaded. Check your connection and reload.",
+          saveError:
+            "Settings could not be saved. Check your connection and try saving again.",
+          authError:
+            "CPA rejected this management key. Enter a valid key and connect again.",
+          discard: "Discard unsaved changes and reload?",
+          modelsUnavailable:
+            "Model suggestions are unavailable. You can still enter model names and patterns.",
+          name: "Name",
+          namePlaceholder: "e.g. Production app…",
+          note: "Note",
+          notePlaceholder: "Add a note about this key…",
+          binding: "Account binding",
+          bindingHelp:
+            "Leave both empty to let CPA pick the account.",
+          credentials: "Select accounts",
+          noCredentials:
+            "No credential files available. You can enter an auth ID or pattern.",
+          authPatterns: "Or enter manually",
+          authPlaceholder: "One auth ID or pattern per line…",
+          allowedModels: "Allowed models",
+          deniedModels: "Denied models",
+          allowHelp: "An empty list allows every model.",
+          denyHelp: "Denied models take priority over allowed models.",
+          patternPlaceholder: "Add a model or wildcard…",
+          remove: "Remove",
+          modelPartial:
+            "Some model lists could not be loaded. Reload to retry or enter a model manually.",
+          key: "Client key",
+          unsaved: "Unsaved changes",
+          unrestricted: "No restrictions",
+          accountCount: "{n} accounts",
+          allowCount: "{n} allowed models",
+          denyCount: "{n} denied models",
+          summarySeparator: ", ",
+          invalidKey: "Enter a management key to connect.",
+          checkUpdate: "Check for updates",
+          checkingUpdate: "Checking…",
+          updateAvailable: "New version available",
+          updateLatest: "You are on the latest version.",
+          updateFailed: "Could not check for updates. Try again later.",
+          viewRelease: "View release",
+        },
+        "zh-TW": {
+          skip: "跳至用戶端金鑰",
+          subtitle: "集中管理用戶端金鑰、帳號綁定與模型存取權限。",
+          reload: "重新載入",
+          save: "儲存",
+          connect: "連接管理介面",
+          connectHelp: "輸入管理金鑰以載入用戶端設定。",
+          managementKey: "管理金鑰",
+          connectButton: "連接",
+          clientKeys: "用戶端金鑰",
+          emptyTitle: "找不到用戶端金鑰",
+          emptyHelp: "請先在 CPA 設定中新增用戶端 API 金鑰，再重新載入此頁面。",
+          loading: "正在載入設定…",
+          saving: "正在儲存…",
+          loaded: "設定已載入。",
+          saved: "已儲存",
+          connecting: "請輸入管理金鑰以繼續。",
+          error: "無法載入設定。請檢查連線後重新載入。",
+          saveError: "無法儲存設定。請檢查連線後再試一次。",
+          authError: "管理金鑰未獲接受。請輸入有效的金鑰並重新連接。",
+          discard: "要捨棄未儲存的變更並重新載入嗎？",
+          modelsUnavailable:
+            "無法取得模型建議，仍可手動輸入模型名稱或萬用字元。",
+          name: "名稱",
+          namePlaceholder: "例如：正式環境應用…",
+          note: "備註",
+          notePlaceholder: "新增此金鑰的備註…",
+          binding: "帳號綁定",
+          bindingHelp: "都不勾選也不輸入時，由 CPA 自行分配帳號。",
+          credentials: "勾選帳號",
+          noCredentials: "沒有可用的憑證檔案，可手動輸入 auth ID 或模式。",
+          authPatterns: "或手動輸入",
+          authPlaceholder: "每行一個 auth ID 或模式…",
+          allowedModels: "允許的模型",
+          deniedModels: "禁止的模型",
+          allowHelp: "清單為空時允許所有模型。",
+          denyHelp: "禁止清單的優先權高於允許清單。",
+          patternPlaceholder: "輸入模型或萬用字元…",
+          remove: "移除",
+          modelPartial: "部分模型清單無法載入。請重新載入，或手動輸入模型。",
+          key: "用戶端金鑰",
+          unsaved: "尚未儲存的變更",
+          unrestricted: "未設定限制",
+          accountCount: "綁定 {n} 個帳號",
+          allowCount: "允許 {n} 個模型",
+          denyCount: "禁止 {n} 個模型",
+          summarySeparator: "，",
+          invalidKey: "請輸入管理金鑰再連接。",
+          checkUpdate: "檢查更新",
+          checkingUpdate: "檢查中…",
+          updateAvailable: "有新版本",
+          updateLatest: "已經是最新版本。",
+          updateFailed: "無法檢查更新，請稍後再試。",
+          viewRelease: "查看版本",
+        },
+        "zh-CN": {
+          skip: "跳至客户端密钥",
+          subtitle: "集中管理客户端密钥、账号绑定与模型访问权限。",
+          reload: "重新加载",
+          save: "保存",
+          connect: "连接管理界面",
+          connectHelp: "输入管理密钥以加载客户端设置。",
+          managementKey: "管理密钥",
+          connectButton: "连接",
+          clientKeys: "客户端密钥",
+          emptyTitle: "未找到客户端密钥",
+          emptyHelp: "请先在 CPA 设置中添加客户端 API 密钥，再重新加载此页面。",
+          loading: "正在加载设置…",
+          saving: "正在保存…",
+          loaded: "设置已加载。",
+          saved: "已保存",
+          connecting: "请输入管理密钥以继续。",
+          error: "无法加载设置。请检查连接后重新加载。",
+          saveError: "无法保存设置。请检查连接后重试。",
+          authError: "管理密钥未被接受。请输入有效密钥并重新连接。",
+          discard: "要放弃未保存的更改并重新加载吗？",
+          modelsUnavailable: "无法获取模型建议，仍可手动输入模型名称或通配符。",
+          name: "名称",
+          namePlaceholder: "例如：生产环境应用…",
+          note: "备注",
+          notePlaceholder: "添加此密钥的备注…",
+          binding: "账号绑定",
+          bindingHelp: "都不勾选也不输入时，由 CPA 自行分配账号。",
+          credentials: "勾选账号",
+          noCredentials: "没有可用的凭证文件，可以手动输入 auth ID 或模式。",
+          authPatterns: "或手动输入",
+          authPlaceholder: "每行一个 auth ID 或模式…",
+          allowedModels: "允许的模型",
+          deniedModels: "禁止的模型",
+          allowHelp: "列表为空时允许所有模型。",
+          denyHelp: "禁止列表的优先级高于允许列表。",
+          patternPlaceholder: "输入模型或通配符…",
+          remove: "移除",
+          modelPartial: "部分模型列表无法加载。请重新加载或手动输入模型。",
+          key: "客户端密钥",
+          unsaved: "未保存的更改",
+          unrestricted: "未设置限制",
+          accountCount: "绑定 {n} 个账号",
+          allowCount: "允许 {n} 个模型",
+          denyCount: "禁止 {n} 个模型",
+          summarySeparator: "，",
+          invalidKey: "请输入管理密钥后连接。",
+          checkUpdate: "检查更新",
+          checkingUpdate: "检查中…",
+          updateAvailable: "有新版本",
+          updateLatest: "已经是最新版本。",
+          updateFailed: "无法检查更新，请稍后再试。",
+          viewRelease: "查看版本",
+        },
+      };
+      let language = "en",
+        managementKey = "",
+        cfg = null,
+        entries = [],
+        auths = [],
+        models = [],
+        suggestSeq = 0,
+        statusKey = "connecting",
+        statusDetail = "",
+        warningKey = "",
+        hasUnsavedChanges = false;
+      function t(key) {
+        return (
+          (translations[language] || translations.en)[key] ||
+          translations.en[key] ||
+          key
+        );
+      }
+      function getLanguage() {
+        try {
+          let raw = localStorage.getItem("cli-proxy-language");
+          if (raw) {
+            let parsed;
+            try {
+              parsed = JSON.parse(raw);
+            } catch {
+              parsed = raw;
+            }
+            let value =
+              typeof parsed === "string"
+                ? parsed
+                : parsed?.state?.language || parsed?.language;
+            if (translations[value]) return value;
+          }
+        } catch {}
+        let browser = (
+          navigator.languages?.[0] ||
+          navigator.language ||
+          "en"
+        ).toLowerCase();
+        if (/^(zh-tw|zh-hk|zh-mo|zh-hant)/.test(browser)) return "zh-TW";
+        return browser.startsWith("zh") ? "zh-CN" : "en";
+      }
+      function translate() {
+        language = getLanguage();
+        document.documentElement.lang = language;
+        document
+          .querySelectorAll("[data-i18n]")
+          .forEach((el) => (el.textContent = t(el.dataset.i18n)));
+        document.querySelectorAll("[data-placeholder]").forEach((el) => {
+          el.placeholder = t(el.dataset.placeholder);
+          if (el.id === "secret")
+            el.setAttribute("aria-label", t("managementKey"));
+        });
+        document.querySelectorAll("[data-title]").forEach((el) => {
+          el.title = t(el.dataset.title);
+          el.setAttribute(
+            "aria-label",
+            t(el.dataset.title) +
+              (el.dataset.item ? " " + el.dataset.item : ""),
+          );
+        });
+        document.querySelectorAll("[data-model-label]").forEach((el) => {
+          el.setAttribute(
+            "aria-label",
+            t(el.dataset.modelLabel) + ": " + t(el.dataset.labelAction),
+          );
+        });
+        $("#status-text").textContent =
+          t(statusKey) + (statusDetail ? " (" + statusDetail + ")" : "");
+        if (warningKey) $("#warning").textContent = t(warningKey);
+        updateCards();
+      }
+      function setStatus(key, kind = "", detail = "") {
+        statusKey = key;
+        statusDetail = detail;
+        $("#status").hidden = ![
+          "saved",
+          "saveError",
+          "error",
+          "authError",
+          "invalidKey",
+          "updateAvailable",
+          "updateLatest",
+          "updateFailed",
+        ].includes(key);
+        $("#status-link").hidden = key !== "updateAvailable";
+        $("#status").dataset.kind = kind;
+        $("#status-text").textContent =
+          t(statusKey) + (statusDetail ? " (" + statusDetail + ")" : "");
+      }
+      function setWarning(key = "") {
+        warningKey = key;
+        $("#warning").hidden = !key;
+        $("#warning").textContent = key ? t(key) : "";
+      }
+      function syncParentTheme() {
+        try {
+          if (window.parent === window) return;
+          const root = window.parent.document.documentElement;
+          const style = window.parent.getComputedStyle(root);
+          if (!style.getPropertyValue("--bg-primary").trim()) return;
+          const own = document.documentElement;
+          for (const name of [
+            "bg-primary",
+            "bg-secondary",
+            "bg-tertiary",
+            "bg-hover",
+            "text-primary",
+            "text-secondary",
+            "text-tertiary",
+            "border-color",
+            "border-primary",
+            "border-hover",
+            "primary-color",
+            "primary-hover",
+            "primary-active",
+            "primary-contrast",
+            "success-color",
+            "error-color",
+            "warning-bg",
+            "warning-border",
+            "shadow",
+            "count-badge-bg",
+            "count-badge-text",
+          ]) {
+            let value = style.getPropertyValue("--" + name).trim();
+            if (value) own.style.setProperty("--" + name, value);
+            else own.style.removeProperty("--" + name);
+          }
+          own.dataset.parentTheme = root.getAttribute("data-theme") || "light";
+          own.style.colorScheme =
+            root.getAttribute("data-theme") === "dark" ? "dark" : "light";
+          document.querySelector('meta[name="theme-color"]').content = style
+            .getPropertyValue("--bg-secondary")
+            .trim();
+        } catch {}
+      }
+      try {
+        if (window.parent !== window) {
+          const parentRoot = window.parent.document.documentElement;
+          syncParentTheme();
+          new MutationObserver(syncParentTheme).observe(parentRoot, {
+            attributes: true,
+            attributeFilter: ["data-theme", "style", "class"],
+          });
+        }
+      } catch {}
+      if (window.parent === window) {
+        const themePreference = matchMedia("(prefers-color-scheme: dark)");
+        const updateThemeColor = () => {
+          document.querySelector('meta[name="theme-color"]').content =
+            getComputedStyle(document.documentElement)
+              .getPropertyValue("--bg-secondary")
+              .trim();
+        };
+        updateThemeColor();
+        themePreference.addEventListener("change", updateThemeColor);
+      }
+      window.addEventListener("storage", (e) => {
+        if (e.key === "cli-proxy-language") translate();
+      });
+      function storedManagementKey() {
+        try {
+          if (localStorage.getItem("isLoggedIn") !== "true") return "";
+          let raw = localStorage.getItem("cli-proxy-auth");
+          if (!raw?.startsWith("enc::v2::")) return "";
+          let encrypted = Uint8Array.from(atob(raw.slice(9)), (c) =>
+            c.charCodeAt(0),
+          );
+          let mask = new TextEncoder().encode(
+            "cli-proxy-api-webui::secure-storage|" + location.host,
+          );
+          let decoded = encrypted.map((b, i) => b ^ mask[i % mask.length]);
+          let key = JSON.parse(
+            new TextDecoder("utf-8", { fatal: true }).decode(decoded),
+          )?.state?.managementKey;
+          return typeof key === "string" ? key.trim() : "";
+        } catch {
+          return "";
+        }
+      }
+      function requestManualKey() {
+        managementKey = "";
+        $("#auth").hidden = false;
+        $("#save").disabled = true;
+        setStatus("connecting");
+      }
+      async function api(path, options = {}) {
+        const response = await fetch("/v8/management/" + path, {
+          ...options,
+          headers: {
+            Authorization: "Bearer " + managementKey,
+            "Content-Type": "application/json",
+            ...(options.headers || {}),
+          },
+        });
+        if (!response.ok) {
+          let error = new Error("HTTP " + response.status);
+          error.status = response.status;
+          throw error;
+        }
+        return response.json();
+      }
+      async function scope(key) {
+        let hash = await crypto.subtle.digest(
+          "SHA-256",
+          new TextEncoder().encode("cli-proxy-api:caller-scope:v1\0" + key),
+        );
+        return [...new Uint8Array(hash)]
+          .map((x) => x.toString(16).padStart(2, "0"))
+          .join("");
+      }
+      function element(tag, className, text) {
+        let el = document.createElement(tag);
+        if (className) el.className = className;
+        if (text !== undefined) el.textContent = text;
+        return el;
+      }
+      function translated(tag, className, key) {
+        let el = element(tag, className, t(key));
+        el.dataset.i18n = key;
+        return el;
+      }
+      // CPAMC remounts its resource iframe when the language changes; retain edits for this tab only.
+      const draftStorageKey = "keyring.unsaved.v1";
+      function clearDraft() {
+        try {
+          sessionStorage.removeItem(draftStorageKey);
+        } catch (error) {
+          console.warn("keyring: cannot clear temporary draft", error);
+        }
+      }
+      function readDraft() {
+        try {
+          let data = JSON.parse(
+            sessionStorage.getItem(draftStorageKey) || "null",
+          );
+          return Array.isArray(data) ? data : [];
+        } catch (error) {
+          console.warn("keyring: cannot read temporary draft", error);
+          return [];
+        }
+      }
+      function entryValues(e) {
+        return {
+          scope: e.scope,
+          name: e.name.value,
+          note: e.note.value,
+          auths: e.auths(),
+          allow_models: e.allow.values(),
+          deny_models: e.deny.values(),
+        };
+      }
+      function normalizedRule(rule) {
+        return {
+          scope: rule.scope,
+          name: rule.name || "",
+          note: rule.note || "",
+          auths: [...(rule.auths || [])].sort(),
+          allow_models: rule.allow_models || [],
+          deny_models: rule.deny_models || [],
+        };
+      }
+      function draftEntries() {
+        return entries.map(entryValues);
+      }
+      function updateCards() {
+        for (const entry of entries) {
+          const value = entryValues(entry);
+          entry.dirty = JSON.stringify(value) !== entry.baseline;
+          entry.dirtyBadge.hidden = !entry.dirty;
+          const counts = [
+            value.auths.length,
+            value.allow_models.length,
+            value.deny_models.length,
+          ];
+          const parts = ["accountCount", "allowCount", "denyCount"]
+            .map((key, i) =>
+              counts[i]
+                ? t(key).replace("{n}", new Intl.NumberFormat(language).format(counts[i]))
+                : "",
+            )
+            .filter(Boolean);
+          entry.summary.textContent = parts.length
+            ? parts.join(t("summarySeparator"))
+            : t("unrestricted");
+        }
+      }
+      function markDirty() {
+        updateCards();
+        hasUnsavedChanges = entries.some((entry) => entry.dirty);
+        if (!hasUnsavedChanges) {
+          clearDraft();
+          setStatus("loaded");
+          return;
+        }
+        try {
+          sessionStorage.setItem(
+            draftStorageKey,
+            JSON.stringify(draftEntries()),
+          );
+        } catch (error) {
+          console.warn("keyring: cannot save temporary draft", error);
+        }
+        setStatus("unsaved");
+      }
+      function makeField(key, value, placeholder, multiline = false) {
+        let group = element("label", "form-group");
+        group.append(translated("span", "label", key));
+        let input = element(multiline ? "textarea" : "input", "input");
+        input.value = value || "";
+        input.name = key;
+        input.autocomplete = "off";
+        input.spellcheck = false;
+        input.dataset.placeholder = placeholder;
+        input.placeholder = t(placeholder);
+        group.append(input);
+        return { group, input };
+      }
+      function lines(value) {
+        return value
+          .split("\n")
+          .map((s) => s.trim())
+          .filter(Boolean);
+      }
+      function policyEditor(key, values) {
+        let panel = element("div", "policy-panel"),
+          heading = element("div", "policy-header");
+        heading.append(
+          translated("strong", "label", key),
+          translated(
+            "span",
+            "policy-tag",
+            key === "allowedModels" ? "allowHelp" : "denyHelp",
+          ),
+        );
+        panel.append(heading);
+        let chips = element("div", "chips"),
+          input = element("input", "chip-input");
+        input.type = "text";
+        input.name = key;
+        input.autocomplete = "off";
+        input.spellcheck = false;
+        let menu = element("ul", "suggest"),
+          active = -1;
+        menu.id = "suggest-" + key + "-" + ++suggestSeq;
+        menu.setAttribute("role", "listbox");
+        menu.hidden = true;
+        input.setAttribute("role", "combobox");
+        input.setAttribute("aria-autocomplete", "list");
+        input.setAttribute("aria-controls", menu.id);
+        input.setAttribute("aria-expanded", "false");
+        input.dataset.modelLabel = key;
+        input.dataset.labelAction = "patternPlaceholder";
+        input.setAttribute(
+          "aria-label",
+          t(key) + ": " + t("patternPlaceholder"),
+        );
+        input.dataset.placeholder = "patternPlaceholder";
+        input.placeholder = t("patternPlaceholder");
+        let selected = [...(values || [])];
+        function draw() {
+          for (const chip of chips.querySelectorAll(".chip")) chip.remove();
+          if (!input.isConnected) chips.append(input);
+          for (const value of selected) {
+            let chip = element("span", "chip"),
+              label = element("span", "", value),
+              remove = element("button", "", "×");
+            label.translate = false;
+            remove.type = "button";
+            remove.dataset.title = "remove";
+            remove.dataset.item = value;
+            remove.title = t("remove");
+            remove.setAttribute("aria-label", t("remove") + " " + value);
+            remove.onclick = () => {
+              selected = selected.filter((v) => v !== value);
+              draw();
+              markDirty();
+              input.focus();
+            };
+            chip.append(label, remove);
+            chips.insertBefore(chip, input);
+          }
+        }
+        function add(value) {
+          value = value.trim();
+          if (value && !selected.includes(value)) {
+            selected.push(value);
+            draw();
+            markDirty();
+          }
+          input.value = "";
+        }
+        function options() {
+          const query = input.value.trim().toLowerCase();
+          return models.filter(
+            (model) =>
+              !selected.includes(model) && model.toLowerCase().includes(query),
+          );
+        }
+        function closeMenu() {
+          active = -1;
+          menu.hidden = true;
+          input.setAttribute("aria-expanded", "false");
+          input.removeAttribute("aria-activedescendant");
+        }
+        function openMenu() {
+          const items = options();
+          if (!items.length) return closeMenu();
+          menu.replaceChildren(
+            ...items.map((model, i) => {
+              const item = element("li", "", model);
+              item.id = menu.id + "-" + i;
+              item.translate = false;
+              item.setAttribute("role", "option");
+              item.setAttribute("aria-selected", String(i === active));
+              item.onmousedown = (e) => {
+                e.preventDefault();
+                add(model);
+                closeMenu();
+              };
+              return item;
+            }),
+          );
+          menu.hidden = false;
+          input.setAttribute("aria-expanded", "true");
+          if (active < 0) return input.removeAttribute("aria-activedescendant");
+          input.setAttribute("aria-activedescendant", menu.id + "-" + active);
+          menu.children[active].scrollIntoView({ block: "nearest" });
+        }
+        input.addEventListener("keydown", (e) => {
+          if (e.isComposing) return;
+          const count = options().length;
+          if ((e.key === "ArrowDown" || e.key === "ArrowUp") && count) {
+            e.preventDefault();
+            active =
+              e.key === "ArrowDown"
+                ? (active + 1) % count
+                : (active - 1 + count) % count;
+            openMenu();
+          } else if (e.key === "Enter") {
+            e.preventDefault();
+            add(!menu.hidden && active >= 0 ? options()[active] : input.value);
+            closeMenu();
+          } else if (e.key === "Escape" && !menu.hidden) {
+            e.preventDefault();
+            closeMenu();
+          } else if (e.key === ",") {
+            e.preventDefault();
+            add(input.value);
+          } else if (e.key === "Backspace" && !input.value && selected.length) {
+            selected.pop();
+            draw();
+            markDirty();
+          }
+        });
+        input.addEventListener("input", () => {
+          markDirty();
+          active = -1;
+          openMenu();
+        });
+        input.addEventListener("focus", openMenu);
+        input.addEventListener("blur", () => {
+          if (input.value.trim()) add(input.value);
+          closeMenu();
+        });
+        draw();
+        chips.append(menu);
+        panel.append(chips);
+        return {
+          panel,
+          values: () => {
+            let pending = input.value.trim();
+            return pending && !selected.includes(pending)
+              ? [...selected, pending]
+              : [...selected];
+          },
+        };
+      }
+      function renderKey(key, rule, expanded) {
+        let card = element("article", "card key-card"),
+          heading = element("h3", "key-heading"),
+          head = element("button", "key-header"),
+          identity = element("span", "key-identity"),
+          icon = element("span", "key-icon");
+        head.type = "button";
+        head.setAttribute("aria-expanded", String(expanded));
+        head.setAttribute("aria-controls", "key-body-" + rule.scope);
+        icon.setAttribute("aria-hidden", "true");
+        icon.innerHTML =
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="m11 12 7-7 3 3-2 2-2-2-2 2 2 2-2 2-2-2"/></svg>';
+        let info = element("span", "key-info"),
+          title = element("span", "key-title", rule.name || t("key")),
+          mask = element(
+            "span",
+            "key-mask",
+            key.length > 8 ? key.slice(0, 4) + "…" + key.slice(-4) : "••••",
+          ),
+          summary = element("span", "key-summary"),
+          dirtyBadge = translated("span", "key-dirty", "unsaved"),
+          chevron = element("span", "key-chevron");
+        dirtyBadge.hidden = true;
+        chevron.setAttribute("aria-hidden", "true");
+        chevron.innerHTML =
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m6 9 6 6 6-6"/></svg>';
+        mask.translate = false;
+        if (!rule.name) title.dataset.i18n = "key";
+        else title.translate = false;
+        info.append(title, mask, summary);
+        identity.append(icon, info);
+        head.append(identity, dirtyBadge, chevron);
+        heading.append(head);
+        card.append(heading);
+        let body = element("div", "key-body"),
+          identityGrid = element("div", "identity-grid"),
+          name = makeField("name", rule.name, "namePlaceholder"),
+          note = makeField("note", rule.note, "notePlaceholder");
+        body.id = "key-body-" + rule.scope;
+        body.hidden = !expanded;
+        head.addEventListener("click", () => {
+          const next = head.getAttribute("aria-expanded") !== "true";
+          head.setAttribute("aria-expanded", String(next));
+          body.hidden = !next;
+        });
+        name.input.addEventListener("input", () => {
+          title.textContent = name.input.value || t("key");
+          title.translate = !name.input.value;
+          if (name.input.value) delete title.dataset.i18n;
+          else title.dataset.i18n = "key";
+          markDirty();
+        });
+        note.input.addEventListener("input", markDirty);
+        identityGrid.append(name.group, note.group);
+        body.append(identityGrid);
+        let binding = element("section"),
+          bindingHead = element("div", "section-title");
+        bindingHead.append(
+          translated("strong", "", "binding"),
+          translated("span", "hint", "bindingHelp"),
+        );
+        binding.append(bindingHead);
+        let grid = element("div", "binding-grid"),
+          creds = element("div", "form-group");
+        creds.append(translated("span", "label", "credentials"));
+        let credentialIds = new Set(auths.map((a) => a.id).filter(Boolean)),
+          list = element("div", "credential-list"),
+          patterns = makeField(
+            "authPatterns",
+            (rule.auths || []).filter((v) => !credentialIds.has(v)).join("\n"),
+            "authPlaceholder",
+            true,
+          );
+        patterns.input.addEventListener("input", markDirty);
+        if (!auths.length)
+          list.append(translated("div", "empty-small", "noCredentials"));
+        for (const a of auths) {
+          if (!a.id) continue;
+          let label = element("label", "credential"),
+            checkbox = element("input");
+          checkbox.type = "checkbox";
+          checkbox.name = "credential";
+          checkbox.value = a.id;
+          checkbox.checked = (rule.auths || []).includes(a.id);
+          checkbox.addEventListener("change", markDirty);
+          let details = element("span", "credential-info"),
+            display = a.email || a.label || a.name || a.id,
+            secondary = [a.provider || a.type, a.name || a.id]
+              .filter((v, i, arr) => v && v !== display && arr.indexOf(v) === i)
+              .join(", ");
+          details.append(
+            element("span", "credential-name", display),
+            element("span", "credential-meta", secondary),
+          );
+          details.translate = false;
+          label.append(checkbox, details);
+          list.append(label);
+        }
+        creds.append(list);
+        grid.append(creds, patterns.group);
+        binding.append(grid);
+        body.append(binding);
+        let policies = element("div", "policy-grid"),
+          allow = policyEditor("allowedModels", rule.allow_models),
+          deny = policyEditor("deniedModels", rule.deny_models);
+        policies.append(allow.panel, deny.panel);
+        body.append(policies);
+        card.append(body);
+        $("#rows").append(card);
+        return {
+          scope: rule.scope,
+          name: name.input,
+          note: note.input,
+          auths: () =>
+            [
+              ...new Set([
+                ...[...list.querySelectorAll("input:checked")].map((b) => b.value),
+                ...lines(patterns.input.value),
+              ]),
+            ].sort(),
+          allow,
+          deny,
+          summary,
+          dirtyBadge,
+        };
+      }
+      async function loadModels(keys) {
+        if (!keys.length) return { models: [], warning: "" };
+        const responses = await Promise.allSettled(
+          keys.map(async (key) => {
+            let r = await fetch("/v1/models", {
+              headers: { Authorization: "Bearer " + key },
+            });
+            if (!r.ok) throw Error("HTTP " + r.status);
+            let body = await r.json();
+            if (!Array.isArray(body.data)) throw Error("Invalid model list");
+            return body.data
+              .map((item) => item.id)
+              .filter((id) => typeof id === "string" && id);
+          }),
+        );
+        let items = new Set();
+        for (const response of responses)
+          if (response.status === "fulfilled")
+            for (const id of response.value) items.add(id);
+        let failures = responses.filter((r) => r.status === "rejected").length;
+        return {
+          models: [...items].sort(),
+          warning: failures
+            ? failures === responses.length
+              ? "modelsUnavailable"
+              : "modelPartial"
+            : "",
+        };
+      }
+      async function load() {
+        try {
+          if (!managementKey) {
+            managementKey = $("#secret").value.trim();
+            $("#secret").value = "";
+            if (!managementKey) {
+              requestManualKey();
+              setStatus("invalidKey", "error");
+              $("#secret").focus();
+              return;
+            }
+          }
+          $("#load").disabled = true;
+          setStatus("loading");
+          setWarning();
+          let [keys, plugin, credentials] = await Promise.all([
+            api("config/access/api-keys").catch((error) => {
+              if (error.status === 404) return [];
+              throw error;
+            }),
+            api("config/plugins/configs/keyring"),
+            api("credentials"),
+          ]);
+          if (!Array.isArray(keys) || !Array.isArray(credentials.files))
+            throw Error("Invalid management response");
+          let catalog = await loadModels(keys);
+          models = catalog.models;
+          auths = credentials.files;
+          cfg = plugin;
+          entries = [];
+          let drafts = readDraft();
+          $("#rows").replaceChildren();
+          for (let key of keys) {
+            let s = await scope(key),
+              original = (cfg.keys || []).find((x) => x.scope === s) || {
+                scope: s,
+              },
+              rule = drafts.find((x) => x.scope === s) || original,
+              entry = renderKey(key, rule, keys.length === 1);
+            entry.baseline = JSON.stringify(normalizedRule(original));
+            entries.push(entry);
+          }
+          $("#key-count").textContent = String(keys.length);
+          $("#empty").hidden = keys.length > 0;
+          $("#content").hidden = false;
+          $("#auth").hidden = true;
+          $("#save").disabled = false;
+          updateCards();
+          hasUnsavedChanges = entries.some((entry) => entry.dirty);
+          setStatus(
+            hasUnsavedChanges ? "unsaved" : "loaded",
+            hasUnsavedChanges ? "" : "success",
+          );
+          setWarning(catalog.warning);
+        } catch (error) {
+          if (error.status === 401 || error.status === 403) {
+            requestManualKey();
+            $("#secret").focus();
+          }
+          setStatus(
+            error.status === 401 || error.status === 403
+              ? "authError"
+              : "error",
+            "error",
+            error.message,
+          );
+        } finally {
+          $("#load").disabled = false;
+        }
+      }
+      async function save() {
+        if (!cfg) return;
+        try {
+          $("#save").disabled = true;
+          let active = new Set(entries.map((e) => e.scope));
+          cfg.keys = [
+            ...(cfg.keys || []).filter((r) => !active.has(r.scope)),
+            ...draftEntries().filter(
+              (r) =>
+                r.name ||
+                r.note ||
+                r.auths.length ||
+                r.allow_models.length ||
+                r.deny_models.length,
+            ),
+          ];
+          setStatus("saving");
+          await api("config/plugins/configs/keyring", {
+            method: "PUT",
+            body: JSON.stringify(cfg),
+          });
+          clearDraft();
+          hasUnsavedChanges = false;
+          for (const entry of entries)
+            entry.baseline = JSON.stringify(entryValues(entry));
+          updateCards();
+          setStatus("saved", "success");
+        } catch (error) {
+          if (error.status === 401 || error.status === 403) {
+            requestManualKey();
+            $("#secret").focus();
+          }
+          setStatus(
+            error.status === 401 || error.status === 403
+              ? "authError"
+              : "saveError",
+            "error",
+            error.message,
+          );
+        } finally {
+          if (managementKey) $("#save").disabled = false;
+        }
+      }
+      $("#load").addEventListener("click", () => {
+        if (hasUnsavedChanges && !window.confirm(t("discard"))) return;
+        clearDraft();
+        hasUnsavedChanges = false;
+        load();
+      });
+      window.addEventListener("beforeunload", (event) => {
+        if (hasUnsavedChanges) {
+          event.preventDefault();
+          event.returnValue = "";
+        }
+      });
+      $("#connect").addEventListener("click", load);
+      $("#secret").addEventListener("keydown", (event) => {
+        if (event.key === "Enter") load();
+      });
+      $("#save").addEventListener("click", save);
+      function parseVersion(tag) {
+        const m = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(tag);
+        return m && m.slice(1).map(Number);
+      }
+      async function checkUpdate() {
+        const button = $("#check-update"),
+          label = button.querySelector("[data-i18n]");
+        button.disabled = true;
+        label.dataset.i18n = "checkingUpdate";
+        label.textContent = t("checkingUpdate");
+        try {
+          const res = await fetch(
+            "https://api.github.com/repos/iiimabbie/cpa-keyring/releases/latest",
+            { headers: { Accept: "application/vnd.github+json" } },
+          );
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          const tag = (await res.json()).tag_name,
+            latest = parseVersion(tag),
+            current = parseVersion("__KEYRING_VERSION__");
+          if (!latest || !current) throw new Error("not comparable: " + tag);
+          const diff = latest.map((n, i) => n - current[i]).find((d) => d);
+          button.querySelector(".update-dot").hidden = !(diff > 0);
+          if (diff > 0) setStatus("updateAvailable", "success", tag);
+          else setStatus("updateLatest", "success");
+        } catch (error) {
+          setStatus("updateFailed", "error", error.message);
+        } finally {
+          label.dataset.i18n = "checkUpdate";
+          label.textContent = t("checkUpdate");
+          button.disabled = false;
+        }
+      }
+      $("#check-update").addEventListener("click", checkUpdate);
+      translate();
+      managementKey = storedManagementKey();
+      if (managementKey) load();
+      else requestManualKey();
+    </script>
+  </body>
+</html>

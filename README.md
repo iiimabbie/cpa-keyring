@@ -22,9 +22,10 @@ CLIProxyAPI treats every client key the same: any key can use any upstream accou
 - **Model rules**: allow or deny models per key with `*` and `?` wildcards. Deny wins, and an empty allow list means every model is allowed.
 - **Filtered model list**: `/v1/models` only shows the models a key is allowed to use.
 - **Management page**: opens from the plugin menu in the management center and reuses your existing login. Client keys are masked on the page.
+- **Update check**: a button in the page header compares your version with the latest GitHub release.
 - **No extra setup**: rules live in CPA's own `config.yaml` and reload without a restart. There is no database or other service to run.
 
-Keys without a rule behave exactly as before.
+Keys without a rule behave exactly as before. A key whose fields are all empty is not written to the configuration.
 
 ## Installation
 
@@ -74,7 +75,7 @@ These come from CLIProxyAPI v8.0.60 itself. Actual model calls are always checke
 > [!WARNING]
 > - **One scheduler at a time**: CPA runs only the highest-priority scheduler plugin. If another scheduler plugin wins, keyring's account bindings do not run.
 > - **Home mode**: Home mode picks accounts through a different path and disables the management page. Do not rely on bindings there.
-> - **Config-based OpenAI-compatible keys** are not listed by the management API, so they cannot be ticked on the page. Add their auth IDs to `auths` by hand.
+> - **Config-based OpenAI-compatible keys** are not listed by the management API, so they cannot be ticked on the page. Add them to `auths` by hand as `openai-compatibility:<provider name>:*`, with the provider name in lowercase.
 > - **Not a hard guarantee**: if CPA calls the scheduler without the caller's identity, or bypasses the plugin after repeated failures, the request is handled by CPA's normal routing.
 
 ## Building from source

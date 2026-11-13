@@ -74,7 +74,7 @@ func dispatch(method string, raw []byte) (any, error) {
 		if err := configure(raw); err != nil {
 			return nil, err
 		}
-		return map[string]any{"schema_version": 6, "metadata": map[string]any{"Name": "keyring", "Version": "0.1.0", "Author": "iiimabbie", "GitHubRepository": "https://github.com/iiimabbie/cpa-keyring", "ConfigFields": []any{map[string]any{"Name": "keys", "Type": "array", "Description": "Per caller scope rules"}}}, "capabilities": map[string]bool{"scheduler": true, "scheduler_across_priorities": true, "request_interceptor": true, "response_interceptor": true, "management_api": true}}, nil
+		return map[string]any{"schema_version": 6, "metadata": map[string]any{"Name": "keyring", "Version": version, "Author": "iiimabbie", "GitHubRepository": "https://github.com/iiimabbie/cpa-keyring", "ConfigFields": []any{map[string]any{"Name": "keys", "Type": "array", "Description": "Per caller scope rules"}}}, "capabilities": map[string]bool{"scheduler": true, "scheduler_across_priorities": true, "request_interceptor": true, "response_interceptor": true, "management_api": true}}, nil
 	case "scheduler.pick":
 		var req struct {
 			Options    struct{ Metadata map[string]any }
