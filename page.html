@@ -217,10 +217,6 @@
         background: var(--bg-hover);
         border-color: var(--border-hover);
       }
-      .btn-small {
-        padding: 8px 10px;
-        font-size: 13px;
-      }
       .status {
         display: flex;
         align-items: center;
@@ -686,13 +682,22 @@
         }
         .topbar {
           gap: 16px;
-        }
-        .actions {
-          width: 100%;
-          flex-wrap: wrap;
+          flex-wrap: nowrap;
         }
         .actions .btn {
-          flex: 1;
+          padding: 10px;
+        }
+        .actions .btn > span:not(.update-dot) {
+          position: absolute;
+          width: 1px;
+          height: 1px;
+          overflow: hidden;
+          clip-path: inset(50%);
+          white-space: nowrap;
+        }
+        .update-dot {
+          top: 4px;
+          right: 4px;
         }
         .identity-grid,
         .policy-grid,
