@@ -1,7 +1,7 @@
 <div align="center">
   <img src="logo.png" width="120" alt="keyring logo">
 
-  # keyring
+  # CPA Keyring
 
   *Per-key names, account bindings and model rules for [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)*
 

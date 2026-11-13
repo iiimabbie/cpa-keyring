@@ -1,7 +1,7 @@
 <div align="center">
   <img src="logo.png" width="120" alt="keyring logo">
 
-  # keyring
+  # CPA Keyring
 
   *替 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) 的每把 key 取名字、綁帳號、限模型*
 
