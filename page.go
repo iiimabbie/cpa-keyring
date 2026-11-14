@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-const version = "0.1.1"
+const version = "0.1.2"
 
 //go:embed page.html
 var pageHTML string

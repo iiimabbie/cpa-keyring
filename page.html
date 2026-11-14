@@ -1199,7 +1199,7 @@
         setStatus("connecting");
       }
       async function api(path, options = {}) {
-        const response = await fetch("/v8/management/" + path, {
+        const response = await fetch("/v0/management/" + path, {
           ...options,
           headers: {
             Authorization: "Bearer " + managementKey,
@@ -1661,12 +1661,9 @@
           setStatus("loading");
           setWarning();
           let [keys, plugin, credentials] = await Promise.all([
-            api("config/access/api-keys").catch((error) => {
-              if (error.status === 404) return [];
-              throw error;
-            }),
-            api("config/plugins/configs/keyring"),
-            api("credentials"),
+            api("api-keys").then((res) => res["api-keys"] || []),
+            api("plugins/keyring/config"),
+            api("auth-files"),
           ]);
           if (!Array.isArray(keys) || !Array.isArray(credentials.files))
             throw Error("Invalid management response");
@@ -1732,7 +1729,7 @@
             ),
           ];
           setStatus("saving");
-          await api("config/plugins/configs/keyring", {
+          await api("plugins/keyring/config", {
             method: "PUT",
             body: JSON.stringify(cfg),
           });

@@ -14,6 +14,7 @@ jobs:
           - {runner: macos-15-intel, goos: darwin, goarch: amd64, cc: clang, ext: dylib}
           - {runner: macos-15, goos: darwin, goarch: arm64, cc: clang, ext: dylib}
           - {runner: ubuntu-latest, goos: windows, goarch: amd64, cc: x86_64-w64-mingw32-gcc, ext: dll}
+          - {runner: ubuntu-latest, goos: windows, goarch: arm64, cc: aarch64-w64-mingw32-clang, ext: dll}
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -22,8 +23,13 @@ jobs:
           go-version: '1.26.x'
       - if: matrix.goos == 'linux' && matrix.goarch == 'arm64'
         run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
-      - if: matrix.goos == 'windows'
+      - if: matrix.goos == 'windows' && matrix.goarch == 'amd64'
         run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-x86-64
+      - if: matrix.goos == 'windows' && matrix.goarch == 'arm64'
+        run: |
+          mkdir -p /tmp/llvm-mingw
+          curl -fsSL https://github.com/mstorsjo/llvm-mingw/releases/download/20261104/llvm-mingw-20261104-ucrt-ubuntu-22.04-x86_64.tar.xz | tar -xJ --strip-components=1 -C /tmp/llvm-mingw
+          echo "/tmp/llvm-mingw/bin" >> $GITHUB_PATH
       - name: Build and package
         env:
           GOOS: ${{ matrix.goos }}

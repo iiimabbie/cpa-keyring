@@ -29,7 +29,7 @@ Keys without a rule behave exactly as before. A key whose fields are all empty i
 
 ## Installation
 
-1. Download the zip for your platform from [Releases](https://github.com/iiimabbie/cpa-keyring/releases). Builds are provided for Linux amd64/arm64, macOS amd64/arm64 and Windows amd64.
+1. Download the zip for your platform from [Releases](https://github.com/iiimabbie/cpa-keyring/releases). Builds are provided for Linux, macOS and Windows on both amd64 and arm64.
 2. Extract it into your CPA plugin directory, either `plugins/` or `plugins/<os>/<arch>/` (for example `plugins/linux/amd64/`).
 3. Make sure plugins are enabled in `config.yaml`, then restart CPA:
 

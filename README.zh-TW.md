@@ -29,7 +29,7 @@ CLIProxyAPI 對每把客戶端 key 一視同仁，任何 key 都能用任何上�
 
 ## 安裝
 
-1. 從 [Releases](https://github.com/iiimabbie/cpa-keyring/releases) 下載對應平台的 zip。提供 Linux amd64／arm64、macOS amd64／arm64 和 Windows amd64。
+1. 從 [Releases](https://github.com/iiimabbie/cpa-keyring/releases) 下載對應平台的 zip。Linux、macOS、Windows 都提供 amd64 和 arm64。
 2. 解壓到 CPA 的插件目錄，`plugins/` 或 `plugins/<os>/<arch>/` 都可以（例如 `plugins/linux/amd64/`）。
 3. 確認 `config.yaml` 有開啟插件，再重啟 CPA：
 
