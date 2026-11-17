@@ -1616,21 +1616,41 @@
           dirtyBadge,
         };
       }
-      async function loadModels(keys) {
-        if (!keys.length) return { models: [], warning: "" };
-        const responses = await Promise.allSettled(
-          keys.map(async (key) => {
-            let r = await fetch("/v1/models", {
-              headers: { Authorization: "Bearer " + key },
-            });
-            if (!r.ok) throw Error("HTTP " + r.status);
-            let body = await r.json();
-            if (!Array.isArray(body.data)) throw Error("Invalid model list");
-            return body.data
-              .map((item) => item.id)
-              .filter((id) => typeof id === "string" && id);
+      // Config-defined providers are not credential files, so their models come from their config lists.
+      const providerLists = [
+        "gemini-api-key",
+        "interactions-api-key",
+        "claude-api-key",
+        "codex-api-key",
+        "xai-api-key",
+        "meta-api-key",
+        "openai-compatibility",
+        "vertex-api-key",
+      ];
+      async function loadModels(files) {
+        const responses = await Promise.allSettled([
+          ...files.map(async (file) => {
+            let body = await api(
+              "auth-files/models?name=" + encodeURIComponent(file.id),
+            );
+            if (!Array.isArray(body.models)) throw Error("Invalid model list");
+            return body.models.map((item) => item.id);
           }),
-        );
+          ...providerLists.map(async (path) => {
+            let entries = (await api(path))[path];
+            if (!Array.isArray(entries)) throw Error("Invalid provider list");
+            return entries
+              .filter((entry) => !entry.disabled)
+              .flatMap((entry) =>
+                (entry.models || []).flatMap((model) => {
+                  let id = (model.alias || model.name || "").trim(),
+                    prefix = (entry.prefix || "").trim();
+                  if (!id) return [];
+                  return prefix ? [id, prefix + "/" + id] : [id];
+                }),
+              );
+          }),
+        ]);
         let items = new Set();
         for (const response of responses)
           if (response.status === "fulfilled")
@@ -1667,7 +1687,7 @@
           ]);
           if (!Array.isArray(keys) || !Array.isArray(credentials.files))
             throw Error("Invalid management response");
-          let catalog = await loadModels(keys);
+          let catalog = await loadModels(credentials.files);
           models = catalog.models;
           auths = credentials.files;
           cfg = plugin;
